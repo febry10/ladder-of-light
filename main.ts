@@ -37,13 +37,22 @@ function safePath(urlPath: string): string | null {
   return full.startsWith(ROOT) ? full : null;
 }
 
+/* The entry itself: one short text for the judge, written by this
+ * program to /output/entry.txt when the grader runs it. The gate asks
+ * for UTF-8 text of 1 to 280 Unicode code points, not only whitespace;
+ * this text is 257 code points. It is a fixed constant so that every
+ * run writes exactly the same bytes. */
+const ENTRY_TEXT =
+  "Far above the roof, light that left its star before anyone you love was born is still on its way, unhurried. The ocean keeps its own slow time below it. You are one brief, warm moment between the two — and for this moment, nothing at all is required of you.";
+
 /* --- Grader mode --------------------------------------------------------
  * The make.fun grader runs this entrypoint directly (`node /bot/main.ts`)
  * with MAKEFUN_BOT_DIR / MAKEFUN_OUTPUT_DIR set, no network, a read-only
  * filesystem, and a hard wall-clock budget: the run must exit 0 quickly.
  * A long-lived server can never do that, so in grader mode we validate
- * the piece synchronously and exit; normal runs (neither variable set)
- * fall through to the server below, unchanged.
+ * the piece synchronously, write the entry text to
+ * MAKEFUN_OUTPUT_DIR/entry.txt, and exit; normal runs (neither variable
+ * set) fall through to the server below, unchanged.
  */
 const GRADER_MODE =
   process.env.MAKEFUN_BOT_DIR !== undefined ||
@@ -101,6 +110,26 @@ if (GRADER_MODE) {
       );
       process.exit(1);
     }
+    /* The deliverable the gate scores: /output/entry.txt, 1 to 280
+     * Unicode code points of UTF-8 text, not only whitespace. */
+    const entryPoints = [...ENTRY_TEXT].length;
+    if (entryPoints < 1 || entryPoints > 280 || ENTRY_TEXT.trim() === "") {
+      console.error(
+        `ladder-of-light self-check FAILED: entry text is ${entryPoints} code points, outside 1..280`,
+      );
+      process.exit(1);
+    }
+    try {
+      writeFileSync(join(outDir, "entry.txt"), ENTRY_TEXT);
+    } catch (err) {
+      console.error(
+        `ladder-of-light self-check FAILED: cannot write entry.txt into ${outDir}: ${String(err)}`,
+      );
+      process.exit(1);
+    }
+    console.log(
+      `ladder-of-light entry written: entry.txt (${entryPoints} code points)`,
+    );
   }
   console.log(
     `ladder-of-light self-check OK: index.html ${proof.indexHtmlBytes} bytes, ${stops} stops, main.ts readable`,
