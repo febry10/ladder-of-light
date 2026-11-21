@@ -78,13 +78,15 @@ if (GRADER_MODE) {
     );
     process.exit(1);
   }
+  /* The proof must be byte-for-byte deterministic: the grader executes
+   * the entry more than once and compares the runs' outputs, so nothing
+   * time- or environment-dependent may appear in it (no timestamps). */
   const proof = {
     piece: "The Ladder of Light",
     check: "grader-mode self-check",
     indexHtmlBytes: Buffer.byteLength(page),
     stops,
     entrypointBytes: Buffer.byteLength(selfSource),
-    checkedAt: new Date().toISOString(),
   };
   const outDir = process.env.MAKEFUN_OUTPUT_DIR;
   if (outDir !== undefined) {
