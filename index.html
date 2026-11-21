@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Ladder of Light — from one atom to everything</title>
+<style>
+  :root{
+    --ink:#e8e6df; --dim:#9a97a3; --faint:#55525e;
+    --accent:#ffd98a; --bg:#030308;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    overflow-x:hidden;
+  }
+  section{
+    min-height:100vh; scroll-snap-align:start; position:relative;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:6vh 6vw; text-align:center;
+  }
+  canvas.art{width:min(62vmin,560px); height:min(62vmin,560px); display:block}
+  .name{
+    margin-top:3.2vh; font-size:.78rem; letter-spacing:.42em; text-transform:uppercase;
+    color:var(--accent); font-family:ui-sans-serif,system-ui,"Helvetica Neue",Arial,sans-serif;
+  }
+  .line{
+    margin-top:1.6vh; max-width:34ch; font-size:clamp(1.35rem,3.4vmin,2rem);
+    line-height:1.35; font-style:italic; color:var(--ink);
+  }
+  .scale{
+    margin-top:2vh; font-family:ui-sans-serif,system-ui,"Helvetica Neue",Arial,sans-serif;
+    color:var(--dim); font-size:.92rem; letter-spacing:.08em;
+  }
+  .scale b{color:var(--ink); font-weight:600; font-size:1.05rem}
+  .ctx{margin-top:.5vh; color:var(--faint); font-size:.85rem; font-style:italic}
+  /* intro + finale */
+  .intro h1{
+    font-size:clamp(2.2rem,7vmin,4.2rem); letter-spacing:.14em; font-weight:400;
+    text-transform:uppercase;
+  }
+  .intro h1 span{color:var(--accent)}
+  .intro p{margin-top:3vh; max-width:44ch; color:var(--dim); font-size:clamp(1rem,2.2vmin,1.2rem); line-height:1.6}
+  .intro .down{margin-top:6vh; color:var(--faint); font-size:1.6rem; animation:bob 2.6s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(10px)}}
+  .finale p{
+    max-width:52ch; font-size:clamp(1.15rem,2.8vmin,1.55rem); line-height:1.75; color:var(--ink);
+  }
+  .finale p + p{margin-top:1.4em}
+  .finale .punch{color:var(--accent); font-style:italic}
+  .finale .end{
+    margin-top:6vh; font-family:ui-sans-serif,system-ui,sans-serif; color:var(--faint);
+    font-size:.75rem; letter-spacing:.35em; text-transform:uppercase;
+  }
+  /* HUD */
+  #hud{
+    position:fixed; left:18px; top:50%; transform:translateY(-50%); z-index:10;
+    font-family:ui-sans-serif,system-ui,sans-serif; color:var(--faint);
+    display:flex; flex-direction:column; align-items:center; gap:10px; user-select:none;
+  }
+  #hud .exp{font-size:1.5rem; color:var(--ink); writing-mode:initial}
+  #hud .exp sup{color:var(--accent); font-size:.95rem}
+  #hud .rail{width:2px; height:34vh; background:#1c1a26; position:relative; border-radius:2px}
+  #hud .rail i{position:absolute; left:0; top:0; width:100%; background:var(--accent); border-radius:2px}
+  #hud .of{font-size:.68rem; letter-spacing:.25em; text-transform:uppercase}
+  #bar{position:fixed; top:0; left:0; height:2px; background:var(--accent); z-index:11; width:0}
+  @media (max-width:640px){ #hud{display:none} }
+</style>
+</head>
+<body>
+<div id="bar"></div>
+<div id="hud">
+  <div class="exp" id="hudExp">10<sup>−10</sup></div>
+  <div class="rail"><i id="hudFill" style="height:0%"></i></div>
+  <div class="of" id="hudOf">metres</div>
+</div>
+
+<section class="intro">
+  <h1>The Ladder<br>of <span>Light</span></h1>
+  <p>Sixteen stops. From a single atom to everything there is —
+     thirty-seven orders of magnitude, climbed one screen at a time.</p>
+  <p>Everything you are about to see is drawn by code, from a seed,
+     the same way every time. Nothing here is a photograph.
+     The universe does not need one.</p>
+  <div class="down">↓</div>
+</section>
+
+<!-- stops are rendered by the script below -->
+
+<section class="finale">
+  <p>You have climbed thirty-seven orders of magnitude,
+     and nothing up there noticed.</p>
+  <p>But near the middle of the ladder, on a small planet,
+     a small creature stopped, looked up the rungs —
+     and felt its chest tighten at the size of it all.</p>
+  <p class="punch">That creature is the only known place in the universe
+     where awe happens.</p>
+  <p>The ladder was never the wonder. The climbing was.</p>
+  <div class="end">· fin ·</div>
+</section>
+
+<script>
+"use strict";
+/* Deterministic PRNG (mulberry32) — every picture below is drawn from a
+   fixed seed, so the page renders identically on every visit. */
+function rng(seed){
+  let a = seed >>> 0;
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const SUP = {"-":"−","0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹"};
+const sup = n => String(n).split("").map(c => SUP[c]).join("");
+
+/* The sixteen stops: name, the one line, the size, the context. */
+const STOPS = [
+  {kind:"atom",      name:"A Hydrogen Atom",        size:"≈ 1 × 10⁻¹⁰ m", exp:-10, ctx:"smaller than the wavelength of visible light",
+   line:"Almost nothing. And almost everything begins here."},
+  {kind:"molecule",  name:"A Water Molecule",       size:"≈ 3 × 10⁻¹⁰ m", exp:-10, ctx:"the shape of every ocean, cloud and tear",
+   line:"Three atoms hold hands — and oceans become possible."},
+  {kind:"sand",      name:"A Grain of Sand",        size:"≈ 5 × 10⁻⁴ m",  exp:-4,  ctx:"coarse sand, the kind that sticks to everything",
+   line:"A mountain, after a billion years of patience."},
+  {kind:"ant",       name:"An Ant",                 size:"≈ 5 × 10⁻³ m",  exp:-3,  ctx:"a common black ant, mid-errand",
+   line:"It carries fifty times its own weight, and never mentions it."},
+  {kind:"human",     name:"A Human",                size:"≈ 1.7 m",       exp:0,   ctx:"you, presumably",
+   line:"Seventy trillion cells, briefly awake, looking up."},
+  {kind:"whale",     name:"A Blue Whale",           size:"≈ 30 m",        exp:1,   ctx:"the largest animal that has ever lived on Earth",
+   line:"Its heart is the size of a small car, and beats so you could hear it from metres away."},
+  {kind:"mountain",  name:"Mount Everest",          size:"≈ 8.8 × 10³ m", exp:3,   ctx:"8,849 m above a sea that is also rising",
+   line:"The planet, reaching for a sky it already touches."},
+  {kind:"earth",     name:"Earth",                  size:"≈ 1.3 × 10⁷ m", exp:7,   ctx:"diameter 12,742 km — home, entire",
+   line:"Everything you have ever loved is on this pale blue dot."},
+  {kind:"jupiter",   name:"Jupiter",                size:"≈ 1.4 × 10⁸ m", exp:8,   ctx:"thirteen hundred Earths would fit inside",
+   line:"A failed star that became a shield for everything behind it."},
+  {kind:"sun",       name:"The Sun",                size:"≈ 1.4 × 10⁹ m", exp:9,   ctx:"99.86% of all the mass in the Solar System",
+   line:"It burns four million tonnes of itself every second, to keep you warm."},
+  {kind:"supergiant",name:"A Red Supergiant",       size:"≈ 1 × 10¹² m",  exp:12,  ctx:"Betelgeuse — set at the Sun's place, its surface would pass Jupiter",
+   line:"A star so large that light needs hours to cross it."},
+  {kind:"system",    name:"The Solar System",       size:"≈ 1 × 10¹³ m",  exp:13,  ctx:"measured to the orbit of Neptune",
+   line:"Eight worlds around one ordinary flame. Our entire address."},
+  {kind:"nebula",    name:"A Nebula",               size:"≈ 2 × 10¹⁷ m",  exp:17,  ctx:"the Orion Nebula, a stellar nursery 24 light-years wide",
+   line:"A nursery. In this cloud, suns are being born."},
+  {kind:"galaxy",    name:"The Milky Way",          size:"≈ 1 × 10²¹ m",  exp:21,  ctx:"about 100,000 light-years across, 200 billion stars",
+   line:"Our galaxy. We have mapped almost none of it."},
+  {kind:"cluster",   name:"A Galaxy Cluster",       size:"≈ 1 × 10²³ m",  exp:23,  ctx:"the Virgo Cluster — a thousand galaxies in one gravity well",
+   line:"A thousand galaxies, falling toward each other forever."},
+  {kind:"universe",  name:"The Observable Universe",size:"≈ 9 × 10²⁶ m",  exp:26,  ctx:"93 billion light-years across — and expanding",
+   line:"Everything light has had time to tell us. And beyond this: more."}
+];
+
+/* ---------- shared drawing helpers ---------- */
+function stars(c, W, H, r, n, maxR){
+  for(let i = 0; i < n; i++){
+    const x = r() * W, y = r() * H, rad = r() * (maxR || 1.6) + .3;
+    c.globalAlpha = .25 + r() * .75;
+    c.fillStyle = r() > .85 ? "#cfe0ff" : "#ffffff";
+    c.beginPath(); c.arc(x, y, rad, 0, 7); c.fill();
+  }
+  c.globalAlpha = 1;
+}
+function glowBall(c, x, y, rad, inner, outer){
+  const g = c.createRadialGradient(x, y, rad * .1, x, y, rad);
+  g.addColorStop(0, inner); g.addColorStop(1, outer);
+  c.fillStyle = g; c.beginPath(); c.arc(x, y, rad, 0, 7); c.fill();
+}
+
+/* ---------- renderers, part one ---------- */
+const DRAW = {
+  atom(c, W, H, r){
+    stars(c, W, H, r, 40, 1);
+    const x = W/2, y = H/2;
+    for(let k = 0; k < 3; k++){
+      c.save(); c.translate(x, y); c.rotate(k * Math.PI / 3);
+      c.strokeStyle = "rgba(140,180,255,.55)"; c.lineWidth = 2;
+      c.beginPath(); c.ellipse(0, 0, W*.36, H*.15, 0, 0, 7); c.stroke();
+      const a = k * 2.1 + .7, ex = Math.cos(a) * W*.36, ey = Math.sin(a) * H*.15;
+      glowBall(c, ex, ey, 7, "#eaf4ff", "rgba(120,170,255,0)");
+      c.restore();
+    }
+    glowBall(c, x, y, 26, "#fff3d6", "rgba(255,180,60,.05)");
+    glowBall(c, x, y, 13, "#ffe9b0", "rgba(255,160,40,.25)");
+  },
+  molecule(c, W, H, r){
+    stars(c, W, H, r, 30, 1);
+    const x = W/2, y = H/2;
+    c.strokeStyle = "rgba(200,215,255,.5)"; c.lineWidth = 16; c.lineCap = "round";
+    c.beginPath(); c.moveTo(x, y); c.lineTo(x - W*.17, y + H*.14); c.stroke();
+    c.beginPath(); c.moveTo(x, y); c.lineTo(x + W*.17, y + H*.14); c.stroke();
+    glowBall(c, x - W*.19, y + H*.16, 34, "#ffffff", "rgba(170,200,255,.15)");
+    glowBall(c, x + W*.19, y + H*.16, 34, "#ffffff", "rgba(170,200,255,.15)");
+    glowBall(c, x, y, 62, "#ff9d8a", "rgba(200,40,30,.35)");
+  },
+  sand(c, W, H, r){
+    const g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#0a0714"); g.addColorStop(1, "#1a120a");
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    for(let i = 0; i < 260; i++){
+      const px = W/2 + (r() - .5) * W * .8;
+      const spread = (1 - Math.abs(px - W/2) / (W * .45));
+      const py = H * .78 - r() * H * .34 * Math.max(spread, .05) + (r() - .5) * 8;
+      const rad = 2 + r() * 6;
+      glowBall(c, px, py, rad, r() > .12 ? "#e8b96f" : "#fff2cf", "rgba(120,70,20,.1)");
+    }
+    glowBall(c, W/2, H*.42, 26, "#ffeec4", "rgba(255,180,80,.12)");
+  },
+  ant(c, W, H, r){
+    const g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#0b0a10"); g.addColorStop(1, "#171009");
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    c.strokeStyle = "#3a2317"; c.fillStyle = "#2a1810"; c.lineCap = "round";
+    const y = H * .58;
+    c.lineWidth = 7;
+    for(let l = 0; l < 3; l++){
+      const bx = W * (.44 + l * .09);
+      c.beginPath(); c.moveTo(bx, y); c.lineTo(bx - 26, y + 58); c.lineTo(bx - 44, y + 96); c.stroke();
+      c.beginPath(); c.moveTo(bx, y); c.lineTo(bx + 30, y + 56); c.lineTo(bx + 58, y + 88); c.stroke();
+    }
+    const seg = (x, rx, ry) => { c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, 7); c.fill(); };
+    seg(W * .30, 62, 40); seg(W * .47, 34, 27); seg(W * .60, 44, 33);
+    c.lineWidth = 5;
+    c.beginPath(); c.moveTo(W * .63, y - 18); c.quadraticCurveTo(W * .72, y - 62, W * .78, y - 58); c.stroke();
+    c.beginPath(); c.moveTo(W * .62, y - 22); c.quadraticCurveTo(W * .68, y - 68, W * .62, y - 84); c.stroke();
+    c.fillStyle = "#0a0605"; c.beginPath(); c.arc(W * .615, y - 8, 5, 0, 7); c.fill();
+    c.fillStyle = "rgba(232,185,111,.9)";
+    c.beginPath(); c.ellipse(W * .30, H * .30, 15, 9, .5, 0, 7); c.fill();
+  },
+  human(c, W, H, r){
+    stars(c, W, H, r, 60, 1.2);
+    const x = W/2, top = H * .16, bot = H * .88, mid = (top + bot) / 2;
+    c.strokeStyle = "#ffd98a"; c.lineWidth = 7; c.lineCap = "round";
+    c.shadowColor = "rgba(255,200,100,.8)"; c.shadowBlur = 22;
+    c.beginPath(); c.arc(x, top + 26, 24, 0, 7); c.stroke();
+    c.beginPath(); c.moveTo(x, top + 52); c.lineTo(x, mid + 40); c.stroke();
+    c.beginPath(); c.moveTo(x, top + 84); c.lineTo(x - 74, mid + 6); c.stroke();
+    c.beginPath(); c.moveTo(x, top + 84); c.lineTo(x + 74, mid - 26); c.stroke();
+    c.beginPath(); c.moveTo(x, mid + 40); c.lineTo(x - 46, bot); c.stroke();
+    c.beginPath(); c.moveTo(x, mid + 40); c.lineTo(x + 46, bot); c.stroke();
+    c.shadowBlur = 0;
+    glowBall(c, x + 74, mid - 26, 5, "#ffffff", "rgba(255,220,150,0)");
+  },
+  whale(c, W, H, r){
+    const g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#04101f"); g.addColorStop(1, "#0a2c47");
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    for(let i = 0; i < 90; i++){
+      c.globalAlpha = .05 + r() * .12; c.fillStyle = "#bfe3ff";
+      c.beginPath(); c.arc(r() * W, r() * H, 1 + r() * 2.4, 0, 7); c.fill();
+    }
+    c.globalAlpha = 1;
+    c.fillStyle = "#7fa8c9";
+    c.beginPath();
+    c.moveTo(W * .08, H * .52);
+    c.bezierCurveTo(W * .25, H * .34, W * .55, H * .33, W * .76, H * .44);
+    c.bezierCurveTo(W * .86, H * .38, W * .93, H * .34, W * .95, H * .36);
+    c.bezierCurveTo(W * .90, H * .46, W * .90, H * .52, W * .94, H * .60);
+    c.bezierCurveTo(W * .82, H * .56, W * .76, H * .55, W * .70, H * .60);
+    c.bezierCurveTo(W * .5, H * .72, W * .22, H * .68, W * .08, H * .52);
+    c.fill();
+    c.fillStyle = "#dceefc"; c.beginPath(); c.arc(W * .155, H * .50, 5, 0, 7); c.fill();
+  },
+  mountain(c, W, H, r){
+    stars(c, W, H, r, 110, 1.4);
+    const ridge = (base, hgt, col) => {
+      c.fillStyle = col; c.beginPath(); c.moveTo(0, H);
+      let x = 0;
+      while(x < W){ x += 30 + r() * 60; c.lineTo(x, base - r() * hgt); }
+      c.lineTo(W, H); c.closePath(); c.fill();
+    };
+    ridge(H * .62, 60, "#131022");
+    ridge(H * .78, 90, "#1b1730");
+    c.fillStyle = "#241f3d";
+    c.beginPath();
+    c.moveTo(W * .18, H); c.lineTo(W * .5, H * .22); c.lineTo(W * .82, H); c.closePath(); c.fill();
+    c.fillStyle = "#f4f6ff";
+    c.beginPath();
+    c.moveTo(W * .415, H * .385); c.lineTo(W * .5, H * .22); c.lineTo(W * .585, H * .385);
+    c.lineTo(W * .545, H * .345); c.lineTo(W * .5, H * .40); c.lineTo(W * .455, H * .345);
+    c.closePath(); c.fill();
+  }
+  ,
+  earth(c, W, H, r){
+    stars(c, W, H, r, 90, 1.3);
+    const x = W/2, y = H/2, R = W * .30;
+    const g = c.createRadialGradient(x - R*.4, y - R*.4, R*.2, x, y, R);
+    g.addColorStop(0, "#7ec3ff"); g.addColorStop(.55, "#2266bb"); g.addColorStop(1, "#0a2c5e");
+    c.fillStyle = g; c.beginPath(); c.arc(x, y, R, 0, 7); c.fill();
+    c.save(); c.beginPath(); c.arc(x, y, R, 0, 7); c.clip();
+    c.fillStyle = "rgba(90,190,110,.85)";
+    for(let i = 0; i < 7; i++){
+      const bx = x + (r() - .5) * R * 1.5, by = y + (r() - .5) * R * 1.5;
+      for(let j = 0; j < 6; j++){
+        c.beginPath();
+        c.ellipse(bx + (r() - .5) * 60, by + (r() - .5) * 40, 14 + r() * 30, 10 + r() * 20, r() * 3, 0, 7);
+        c.fill();
+      }
+    }
+    c.fillStyle = "rgba(255,255,255,.35)";
+    for(let i = 0; i < 12; i++){
+      c.beginPath();
+      c.ellipse(x + (r() - .5) * R * 1.7, y + (r() - .5) * R * 1.7, 24 + r() * 46, 6 + r() * 8, (r() - .5) * .6, 0, 7);
+      c.fill();
+    }
+    const sh = c.createRadialGradient(x + R*.55, y + R*.35, R*.3, x, y, R * 1.25);
+    sh.addColorStop(0, "rgba(0,0,10,0)"); sh.addColorStop(1, "rgba(0,0,12,.55)");
+    c.fillStyle = sh; c.fillRect(x - R, y - R, R * 2, R * 2);
+    c.restore();
+  },
+  jupiter(c, W, H, r){
+    stars(c, W, H, r, 90, 1.3);
+    const x = W/2, y = H/2, R = W * .33;
+    c.save(); c.beginPath(); c.arc(x, y, R, 0, 7); c.clip();
+    const bands = ["#c8a97e","#e8d9bd","#a97f56","#efe3cb","#b98d5f","#e3d0ac","#9c7148","#e8d9bd","#c0a173"];
+    let by = y - R;
+    for(let i = 0; i < bands.length; i++){
+      const bh = (R * 2 / bands.length) * (.8 + r() * .45);
+      c.fillStyle = bands[i]; c.fillRect(x - R, by, R * 2, bh + 1); by += bh;
+    }
+    c.fillStyle = "rgba(216,84,50,.85)";
+    c.beginPath(); c.ellipse(x + R * .34, y + R * .28, R * .20, R * .11, 0, 0, 7); c.fill();
+    c.fillStyle = "rgba(240,150,110,.6)";
+    c.beginPath(); c.ellipse(x + R * .34, y + R * .28, R * .12, R * .06, 0, 0, 7); c.fill();
+    const sh = c.createRadialGradient(x - R*.4, y - R*.45, R*.2, x, y, R * 1.3);
+    sh.addColorStop(0, "rgba(255,255,255,.14)"); sh.addColorStop(.6, "rgba(0,0,0,0)"); sh.addColorStop(1, "rgba(10,5,0,.5)");
+    c.fillStyle = sh; c.fillRect(x - R, y - R, R * 2, R * 2);
+    c.restore();
+  },
+  sun(c, W, H, r){
+    const x = W/2, y = H/2, R = W * .26;
+    const halo = c.createRadialGradient(x, y, R * .5, x, y, R * 3.1);
+    halo.addColorStop(0, "rgba(255,190,80,.5)"); halo.addColorStop(.4, "rgba(255,130,40,.16)"); halo.addColorStop(1, "rgba(255,110,30,0)");
+    c.fillStyle = halo; c.fillRect(0, 0, W, H);
+    c.strokeStyle = "rgba(255,180,90,.35)"; c.lineCap = "round";
+    for(let i = 0; i < 42; i++){
+      const a = r() * Math.PI * 2, len = R * (1.25 + r() * .8);
+      c.lineWidth = 2 + r() * 3;
+      c.beginPath();
+      c.moveTo(x + Math.cos(a) * R * 1.04, y + Math.sin(a) * R * 1.04);
+      c.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+      c.stroke();
+    }
+    glowBall(c, x, y, R, "#fff7dd", "#ff9a2e");
+    for(let i = 0; i < 260; i++){
+      const a = r() * Math.PI * 2, d = Math.sqrt(r()) * R * .96;
+      c.fillStyle = r() > .5 ? "rgba(255,220,150,.20)" : "rgba(230,110,20,.18)";
+      c.beginPath(); c.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, 2 + r() * 7, 0, 7); c.fill();
+    }
+  },
+  supergiant(c, W, H, r){
+    stars(c, W, H, r, 70, 1.2);
+    const x = W/2, y = H/2, R = W * .40;
+    const halo = c.createRadialGradient(x, y, R * .5, x, y, R * 1.7);
+    halo.addColorStop(0, "rgba(255,90,40,.4)"); halo.addColorStop(1, "rgba(160,20,0,0)");
+    c.fillStyle = halo; c.fillRect(0, 0, W, H);
+    c.beginPath();
+    for(let a = 0; a <= Math.PI * 2 + .01; a += .12){
+      const rr = R * (1 + (r() - .5) * .07);
+      const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr;
+      a === 0 ? c.moveTo(px, py) : c.lineTo(px, py);
+    }
+    c.closePath();
+    const g = c.createRadialGradient(x - R*.3, y - R*.3, R*.2, x, y, R * 1.05);
+    g.addColorStop(0, "#ffb37a"); g.addColorStop(.5, "#f06423"); g.addColorStop(1, "#8f1d05");
+    c.fillStyle = g; c.fill();
+    c.save(); c.clip();
+    for(let i = 0; i < 380; i++){
+      const a = r() * Math.PI * 2, d = Math.sqrt(r()) * R;
+      c.fillStyle = r() > .45 ? "rgba(255,170,90,.16)" : "rgba(90,10,0,.20)";
+      c.beginPath(); c.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, 3 + r() * 11, 0, 7); c.fill();
+    }
+    c.restore();
+  },
+  system(c, W, H, r){
+    stars(c, W, H, r, 130, 1.3);
+    const x = W/2, y = H/2;
+    const cols = ["#b8b2a6","#e8c98f","#7ec3ff","#d96f4e","#e3c298","#f0deb2","#a8d8e8","#6f8fe8"];
+    for(let i = 0; i < 8; i++){
+      const rad = 52 + i * 44;
+      c.strokeStyle = "rgba(160,170,220,.20)"; c.lineWidth = 1.5;
+      c.beginPath(); c.arc(x, y, rad, 0, 7); c.stroke();
+      const a = r() * Math.PI * 2;
+      glowBall(c, x + Math.cos(a) * rad, y + Math.sin(a) * rad, 3.5 + i * 1.15, cols[i], "rgba(0,0,0,0)");
+    }
+    glowBall(c, x, y, 30, "#fff3cf", "rgba(255,150,40,.12)");
+    glowBall(c, x, y, 17, "#ffe9a8", "rgba(255,160,40,.3)");
+  },
+  nebula(c, W, H, r){
+    const puffs = [
+      ["rgba(120,60,200,.34)", .38, .42, .34], ["rgba(30,140,190,.30)", .60, .55, .38],
+      ["rgba(230,70,140,.24)", .48, .62, .30], ["rgba(70,200,190,.20)", .55, .34, .26],
+      ["rgba(90,40,160,.30)", .34, .58, .28]
+    ];
+    for(const [col, fx, fy, fr] of puffs){
+      const g = c.createRadialGradient(W*fx, H*fy, 10, W*fx, H*fy, W*fr);
+      g.addColorStop(0, col); g.addColorStop(1, "rgba(0,0,0,0)");
+      c.fillStyle = g; c.fillRect(0, 0, W, H);
+    }
+    for(let i = 0; i < 6; i++){
+      const g = c.createRadialGradient(r()*W, r()*H, 4, r()*W, r()*H, 60 + r()*90);
+      g.addColorStop(0, "rgba(2,0,10,.35)"); g.addColorStop(1, "rgba(0,0,0,0)");
+      c.fillStyle = g; c.fillRect(0, 0, W, H);
+    }
+    stars(c, W, H, r, 420, 1.7);
+    glowBall(c, W*.47, H*.47, 9, "#ffffff", "rgba(160,190,255,0)");
+    glowBall(c, W*.53, H*.44, 7, "#ffe9f4", "rgba(255,150,200,0)");
+  },
+  galaxy(c, W, H, r){
+    const x = W/2, y = H/2;
+    const halo = c.createRadialGradient(x, y, 10, x, y, W * .42);
+    halo.addColorStop(0, "rgba(255,230,180,.28)"); halo.addColorStop(.35, "rgba(150,140,220,.10)"); halo.addColorStop(1, "rgba(0,0,0,0)");
+    c.fillStyle = halo; c.fillRect(0, 0, W, H);
+    for(let i = 0; i < 2600; i++){
+      const arm = i % 3, t = Math.pow(r(), .72);
+      const ang = arm * (Math.PI * 2 / 3) + t * 4.4 + (r() - .5) * .34 * (1 - t * .5);
+      const d = t * W * .40 + 4;
+      const px = x + Math.cos(ang) * d, py = y + Math.sin(ang) * d * .62;
+      const warm = r() > t * .8;
+      c.fillStyle = warm ? "rgba(255,214,150,.8)" : "rgba(190,205,255,.8)";
+      c.globalAlpha = .25 + r() * .65;
+      c.fillRect(px, py, 1.7, 1.7);
+    }
+    c.globalAlpha = 1;
+    glowBall(c, x, y, 34, "#fff2cf", "rgba(255,190,90,.10)");
+    stars(c, W, H, r, 90, 1.2);
+  },
+  cluster(c, W, H, r){
+    stars(c, W, H, r, 60, 1);
+    for(let i = 0; i < 46; i++){
+      const gx = W/2 + (r() - .5) * W * .84, gy = H/2 + (r() - .5) * H * .84;
+      const s = 5 + r() * 15, rot = r() * Math.PI;
+      c.save(); c.translate(gx, gy); c.rotate(rot);
+      const g = c.createRadialGradient(0, 0, 1, 0, 0, s);
+      const warm = r() > .35;
+      g.addColorStop(0, warm ? "rgba(255,226,170,.95)" : "rgba(195,212,255,.95)");
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      c.fillStyle = g;
+      c.beginPath(); c.ellipse(0, 0, s, s * (.34 + r() * .3), 0, 0, 7); c.fill();
+      c.restore();
+    }
+    glowBall(c, W/2, H/2, 12, "#fff2cf", "rgba(255,200,120,0)");
+  },
+  universe(c, W, H, r){
+    const x = W/2, y = H/2, R = W * .46;
+    const edge = c.createRadialGradient(x, y, R * .55, x, y, R);
+    edge.addColorStop(0, "rgba(20,16,40,0)"); edge.addColorStop(.85, "rgba(24,18,54,.25)"); edge.addColorStop(1, "rgba(2,2,8,.92)");
+    for(let i = 0; i < 1500; i++){
+      const a = r() * Math.PI * 2, d = Math.sqrt(r()) * R * .97;
+      const px = x + Math.cos(a) * d, py = y + Math.sin(a) * d;
+      const pick = r();
+      c.fillStyle = pick > .9 ? "#ffd9a0" : pick > .75 ? "#bcd2ff" : "#ffffff";
+      c.globalAlpha = .3 + r() * .7;
+      if(r() > .82){ c.beginPath(); c.ellipse(px, py, 2.6, 1.2, r() * 3, 0, 7); c.fill(); }
+      else c.fillRect(px, py, 1.6, 1.6);
+    }
+    c.globalAlpha = 1;
+    c.fillStyle = edge; c.fillRect(0, 0, W, H);
+    c.strokeStyle = "rgba(150,160,220,.28)"; c.lineWidth = 2;
+    c.beginPath(); c.arc(x, y, R, 0, 7); c.stroke();
+    c.fillStyle = "rgba(160,170,220,.5)";
+    c.font = "26px ui-sans-serif, system-ui, sans-serif"; c.textAlign = "center";
+    c.fillText("the edge of everything we can see", x, y + R + 42);
+  }
+};
+
+/* ---------- build the stops ---------- */
+const intro = document.querySelector(".intro");
+STOPS.forEach((s, i) => {
+  const sec = document.createElement("section");
+  sec.className = "stop"; sec.dataset.exp = s.exp; sec.dataset.idx = i;
+  sec.innerHTML =
+    '<canvas class="art" width="900" height="900"></canvas>' +
+    '<div class="name">' + s.name + "</div>" +
+    '<div class="line">“' + s.line + "”</div>" +
+    '<div class="scale"><b>' + s.size + "</b></div>" +
+    '<div class="ctx">' + s.ctx + "</div>";
+  document.body.insertBefore(sec, document.querySelector(".finale"));
+});
+
+/* ---------- draw on approach, drive the HUD ---------- */
+const hudExp = document.getElementById("hudExp"),
+      hudFill = document.getElementById("hudFill"),
+      bar = document.getElementById("bar");
+const drawn = new WeakSet();
+const io = new IntersectionObserver(entries => {
+  for(const e of entries){
+    if(!e.isIntersecting) continue;
+    const sec = e.target;
+    if(sec.classList.contains("stop")){
+      const i = +sec.dataset.idx, s = STOPS[i];
+      hudExp.innerHTML = "10<sup>" + sup(s.exp) + "</sup>";
+      hudFill.style.height = ((i + 1) / STOPS.length * 100) + "%";
+      const cv = sec.querySelector("canvas");
+      if(!drawn.has(cv)){
+        drawn.add(cv);
+        DRAW[s.kind](cv.getContext("2d"), cv.width, cv.height, rng(1000 + i * 77));
+      }
+    }
+  }
+}, {threshold: .45});
+document.querySelectorAll("section").forEach(sec => io.observe(sec));
+addEventListener("scroll", () => {
+  const max = document.body.scrollHeight - innerHeight;
+  bar.style.width = (max > 0 ? (scrollY / max) * 100 : 0) + "%";
+}, {passive: true});
+</script>
+</body>
+</html>
